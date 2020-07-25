@@ -75,8 +75,8 @@ app.post('/links',
   });
 
 app.post('/signup', (req, res, next) => {
-
-  models.Users.get({username: req.body.username})
+  var user = req.body.username;
+  models.Users.get({username: user})
     .then((userExists) => {
       if (userExists === undefined) {
         models.Users.create(req.body)
@@ -103,17 +103,17 @@ app.post('/login', (req, res, next) => {
   // if fails, keep on login page
   // res.redirect('/login');
 
-  models.Users.get({username: user})
+  models.Users.get({username: req.body.username})
     .then((userExists) => {
       if (userExists !== undefined) {
-        models.Users.compare(req.body.password, userExists.password, userExists.salt)
-          .then((dataComparison) => {
-            if (dataComparison) {
-              res.redirect('/');
-            } else {
-              res.redirect('/login');
-            }
-          });
+        if (models.Users.compare(req.body.password, userExists.password, userExists.salt)) {
+          // .then(() => {
+          res.redirect('/');
+        } else {
+          res.redirect('/login');
+        }
+      } else {
+        res.redirect('/login');
       }
     });
 });
