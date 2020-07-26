@@ -15,19 +15,20 @@ app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: true }));
 app.use(express.static(path.join(__dirname, '../public')));
 
+app.use(require('./middleware/cookieParser'));
+app.use(Auth.createSession);
 
-
-app.get('/',
+app.get('/', Auth.verifySession,
   (req, res) => {
     res.render('index');
   });
 
-app.get('/create',
+app.get('/create', Auth.verifySession,
   (req, res) => {
     res.render('index');
   });
 
-app.get('/links',
+app.get('/links', Auth.verifySession,
   (req, res, next) => {
     models.Links.getAll()
       .then(links => {
@@ -38,7 +39,7 @@ app.get('/links',
       });
   });
 
-app.post('/links',
+app.post('/links', Auth.verifySession,
   (req, res, next) => {
     var url = req.body.url;
     if (!models.Links.isValidUrl(url)) {
@@ -74,59 +75,83 @@ app.post('/links',
       });
   });
 
+app.get('/signup', (req, res) => {
+  res.render('signup');
+});
+
 app.post('/signup', (req, res, next) => {
-  var user = req.body.username;
-  models.Users.get({username: user})
+  var username = req.body.username;
+  var password = req.body.password;
+
+  return models.Users.get({username})
+
     .then((userExists) => {
-      if (userExists === undefined) {
-        models.Users.create(req.body)
-          .then(() => {
-            res.redirect('/');
-          });
+      if (!userExists) {
+        return models.Users.create({username, password});
       } else {
-        res.redirect('/signup');
+        throw userExists;
       }
+    })
+    .then((results) => {
+      return models.Sessions.update({hash: req.session.hash}, {userId: results.insertId});
+    })
+    .then(() => {
+      res.redirect('/');
+    })
+    .catch(userExists => {
+      res.redirect('/signup');
     });
+});
+
+app.get('/login', (req, res) => {
+  res.render('login');
 });
 
 app.post('/login', (req, res, next) => {
-  // user goes to login page
-  // user tries to login
-  // check if username exists
-  // models.Users.get({username: user})
-  // GET username, password, and salt from database
-  // models.Users.get({username: user}, {password: req.body.password}, {salt: req.body.salt})
-  // compare attempted password, password on file, and salt
-  // models.Users.compare(attempted, password, salt)
-  // if passes, redirect to home
-  // res.redirect('/');
-  // if fails, keep on login page
-  // res.redirect('/login');
+  var username = req.body.username;
+  var password = req.body.password;
 
-  models.Users.get({username: req.body.username})
-    .then((userExists) => {
-      if (userExists !== undefined) {
-        if (models.Users.compare(req.body.password, userExists.password, userExists.salt)) {
-          // .then(() => {
-          res.redirect('/');
-        } else {
-          res.redirect('/login');
-        }
-      } else {
-        res.redirect('/login');
+  return models.Users.get({username})
+    .then((user) => {
+      if (!user || !models.Users.compare(password, user.password, user.salt)) {
+        throw new Error('Username and password do not match');
       }
+      return models.Sessions.update({hash: req. session.hash}, {userId: user.id});
+    })
+    .then(() => {
+      res.redirect('/');
+    })
+    .error((error) => {
+      res.status(500).send(error);
+    })
+    .catch(() => {
+      res.redirect('/login');
     });
 });
 
 
-//  params: {},
-//     query: {},
-//     res: [Circular],
-//     body: { username: 'Samantha', password: 'Samantha' },
-//     _body: true,
-//     length: undefined,
-//     route: Route { path: '/signup', stack: [Array], methods: [Object] },
-//     [Symbol(kCapture)]: false
+// models.Users.get({username: req.body.username})
+//   .then((userExists) => {
+//     if (userExists !== undefined) {
+//       if (models.Users.compare(req.body.password, userExists.password, userExists.salt)) {
+//         // .then(() => {
+//         res.redirect('/');
+//       } else {
+//         res.redirect('/login');
+//       }
+//     } else {
+//       res.redirect('/login');
+//     }
+//   });
+
+
+app.get('/logout', (req, res, next) => {
+  return models.Sessions.delete({hash: req.cookies.shortlyid})
+    .then(() => {
+      res.clearCookie('shortlyid');
+      res.redirect('/login');
+    });
+});
 
 /************************************************************/
 // Write your authentication routes here
